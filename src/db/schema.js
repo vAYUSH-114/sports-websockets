@@ -6,7 +6,6 @@ import {
     text,
     timestamp,
     jsonb,
-    pgArray,
 } from 'drizzle-orm/pg-core';
 
 // Match status enum
