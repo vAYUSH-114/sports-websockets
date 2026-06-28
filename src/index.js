@@ -5,6 +5,7 @@ const port = process.env.PORT || 8000;
 const host = process.env.HOST || '0.0.0.0'
 import http from 'http'
 import { attachWebSocketServer } from './ws/server.js';
+import { securityMiddleware } from './arcjet.js';
 
 app.use(express.json());
 
@@ -12,6 +13,8 @@ const server = http.createServer(app)
 app.get('/', (req, res) => {
     res.send('helo');
 })
+
+app.use(securityMiddleware());
 
 app.use("/matches", matchRouter)
 
