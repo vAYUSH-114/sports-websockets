@@ -22,10 +22,6 @@ function broadcast(wss, payload) {
 
 export function attachWebSocketServer(server) {
 
-
-
-
-
     // we are using the same server/ http server for requesting for websocket
     const wss = new WebSocketServer({
         server,
@@ -33,31 +29,72 @@ export function attachWebSocketServer(server) {
         maxPayload: 1024 * 1024,
     })
 
+    const upgradeTimeoutMs = 2000;
+
+    function isWsUpgradeForThisServer(req) {
+        // ws may be mounted behind a proxy; keep matching minimal & robust
+        if (!req.url) return false;
+        const [pathname] = req.url.split('?');
+        return pathname === '/ws';
+    }
+
+    if (wsArcjet) {
+        server.on('upgrade', (req, socket, head) => {
+            if (!isWsUpgradeForThisServer(req)) return;
+
+            let settled = false;
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                try {
+                    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+                } catch { }
+                socket.destroy();
+            }, upgradeTimeoutMs);
+
+            (async () => {
+                try {
+                    const decision = await wsArcjet.protect(req);
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+
+                    if (decision.isDenied()) {
+                        const statusCode = decision.reason.isRateLimit() ? 429 : 403;
+                        const body = decision.reason.isRateLimit() ? 'Rate limit reached' : 'Access denied';
+                        try {
+                            socket.write(
+                                `HTTP/1.1 ${statusCode} ${statusCode === 429 ? 'Too Many Requests' : 'Forbidden'}\r\n` +
+                                'Content-Type: text/plain\r\n' +
+                                'Connection: close\r\n' +
+                                `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n` +
+                                body
+                            );
+                        } catch { }
+                        socket.destroy();
+                        return;
+                    }
+
+                    wss.handleUpgrade(req, socket, head, (ws) => {
+                        wss.emit('connection', ws, req);
+                    });
+                } catch (e) {
+                    console.error(`ws upgrade security failure`, e)
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    try {
+                        socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+                    } catch { }
+                    socket.destroy();
+                }
+            })();
+        });
+
+
+    }
 
     wss.on('connection', async (socket, req) => {
-
-        if (wsArcjet) {
-            try {
-                const decision = await wsArcjet.protect(req);
-                if (decision.isDenied()) {
-                    const code = decision.reason.isRateLimit() ? 1013 : 1008; //1013 rate limit reached try again later and 1008 a bot is dectcted
-                    const reason = decision.reason.isRateLimit() ? 'Rate limit reached' : 'acces denied';
-
-                    socket.close(code, reason);
-                    return;
-                }
-            } catch (e) {
-                console.error(`ws connection failure`, e)
-                socket.close(1011, 'server security error');
-                return;
-            }
-
-
-
-        }
-
-
-
         socket.isAlive = true;
         socket.on('pong', () => { socket.isAlive = true; });
 
