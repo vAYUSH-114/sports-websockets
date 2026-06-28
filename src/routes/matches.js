@@ -51,7 +51,7 @@ matchRouter.post('/', async (req, res) => {
 
         res.status(201).json({ data: event });
     } catch (e) {
-        console.error('Failed to fetch matches:', e);
-        res.status(500).json({ error: 'Failed to fetch matches.' });
+        console.error('Failed to create matches:', e);
+        res.status(500).json({ error: 'Failed to create matches.' });
     }
 })

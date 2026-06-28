@@ -15,6 +15,7 @@ app.get('/', (req, res) => {
 
 app.use("/matches", matchRouter)
 
+//stored it into the locals so that can be get anywhere we  need and can broacast.
 const { broadcastMatchCreated } = attachWebSocketServer(server);
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
 
