@@ -6,6 +6,7 @@ const host = process.env.HOST || '0.0.0.0'
 import http from 'http'
 import { attachWebSocketServer } from './ws/server.js';
 import { securityMiddleware } from './arcjet.js';
+import { commentryRouter } from './routes/commentry.js';
 
 app.use(express.json());
 
@@ -17,10 +18,12 @@ app.get('/', (req, res) => {
 app.use(securityMiddleware());
 
 app.use("/matches", matchRouter)
+app.use("/matches/:id/commentry", commentryRouter)
 
 //stored it into the locals so that can be get anywhere we  need and can broacast.
-const { broadcastMatchCreated } = attachWebSocketServer(server);
+const { broadcastMatchCreated, broadcastCommentry } = attachWebSocketServer(server);
 app.locals.broadcastMatchCreated = broadcastMatchCreated;
+app.locals.broadcastCommentry = broadcastCommentry;
 
 server.listen(port, host, () => {
     const baseUrl = host === '0.0.0.0' ? `http://localhost:${port}` : `http://${host}:${port}`;

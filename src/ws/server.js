@@ -1,6 +1,33 @@
 import { WebSocket, WebSocketServer } from "ws";
 import { wsArcjet } from "../arcjet.js";
 
+const matchSubscribers = new Map(); //not adding twice to the server
+
+function subscribe(matchId, socket) {
+    if (!matchSubscribers.has(matchId)) {
+        matchSubscribers.set(matchId, new Set());
+    }
+    matchSubscribers.get(matchId).add(socket);
+}
+
+function unsubscribe(matchId, socket) {
+    const subscribers = matchSubscribers.get(matchId);
+    if (!subscribers) return;
+    matchSubscribers.delete(socket);
+    if (subscribers.size() == 0) {
+        matchSubscribers.delete(matchId);
+    }
+}
+
+
+
+
+function cleanupSubscriptions(socket) {
+    for (const matchId of socket.subscriptions) {
+        unsubscribe(matchId, socket);
+    }
+}
+
 //send the json to those servber which is open
 function sendJson(socket, payload) {
     if (socket.readyState !== WebSocket.OPEN) return
@@ -9,8 +36,46 @@ function sendJson(socket, payload) {
 
 }
 
+function broadcastToMatch(matchId, payload) {
+    const subscribers = matchSubscribers.get(matchId);
+    if (!subscribers || subscribers.size === 0) return;
+
+    const msg = JSON.stringify(payload);
+
+    for (const client of subscribers) {
+        if (client.readyState === WebSocket.OPEN) client.send(msg);
+    }
+
+}
+
+
+
+function handleMessage(socket, data) {
+    let msg;
+    try {
+        msg = JSON.parse(data.toString());
+        
+    } catch (e) {
+        // sendJson(socket, { type: 'error', message: 'Invalid json' });
+    }
+    if (msg?.type === "subscribe" && Number.isInteger(msg.matchId)) {
+        subscribe(msg.matchId, socket);
+        socket.subscriptions.add(msg.matchId);
+        sendJson(socket, { type: 'subscribed', matchId: msg.matchId })
+        return;
+    }
+
+    if (msg?.type === "unsubscribe" && Number.isInteger(msg.matchId)) {
+        unsubscribe(msg.matchId, socket);
+        socket.subscriptions.delete(msg.matchId);
+        sendJson(socket, { type: 'unsubscribed', matchId: msg.matchId })
+        return;
+    }
+
+}
+
 //broadcast to all connected server
-function broadcast(wss, payload) {
+function broadcastToAll(wss, payload) {
     for (const client of wss.clients) {
         //continue instead of return cause return exit the whole function while continue will do for those who arent open
         // if (client.readyState !== WebSocket.OPEN) return
@@ -37,6 +102,7 @@ export function attachWebSocketServer(server) {
         const [pathname] = req.url.split('?');
         return pathname === '/ws';
     }
+
 
     if (wsArcjet) {
         server.on('upgrade', (req, socket, head) => {
@@ -98,7 +164,19 @@ export function attachWebSocketServer(server) {
         socket.isAlive = true;
         socket.on('pong', () => { socket.isAlive = true; });
 
+        socket.subscriptions = new Set();
+
         sendJson(socket, { type: 'welcome' });
+
+        socket.on('message', (data) => {
+            handleMessage(socket, data);
+        })
+        socket.on('error', () => {
+            socket.terminate();
+        })
+        socket.on('close', () => {
+            cleanupSubscriptions(socket);
+        });
         socket.on('error', () => {
             console.error
         });
@@ -116,9 +194,12 @@ export function attachWebSocketServer(server) {
     wss.on('close', () => clearInterval(interval));
     // after creating a new match do broadcasting (connection is open) so that all user can see.
     function broadcastMatchCreated(match) {
-        broadcast(wss, { type: 'match_created', data: match })
+        broadcastToAll(wss, { type: 'match_created', data: match })
     }
 
-    return { broadcastMatchCreated };
+    function broadcastCommentry(matchId, comment) {
+        broadcastToMatch(matchId, { type: 'commentry', data: comment })
+    }
+    return { broadcastMatchCreated, broadcastCommentry };
 
 }
