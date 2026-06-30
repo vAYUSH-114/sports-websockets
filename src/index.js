@@ -1,3 +1,6 @@
+import AgentApi from 'apminsight'
+AgentApi.config()
+
 import express from 'express';
 const app = express();
 import { matchRouter } from './routes/matches.js'
